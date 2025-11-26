@@ -197,12 +197,30 @@ jobs:
             exit 0
           fi
           
-          # Synchronise avec remote avant commit/push
-          git pull origin main --rebase || (echo "Pull failed, aborting"; exit 1)
+          # Stash les changements staged pour pull clean
+          git stash push -m "Temp stash for K8s update: ${IMAGE_TAG}"
           
-          # Commit si toujours des changements
+          # Pull et rebase
+          if git pull origin main --rebase; then
+            echo "Pull successful"
+          else
+            echo "Pull failed, aborting"
+            git stash pop  # Restaure si échec
+            exit 1
+          fi
+          
+          # Pop stash et re-add (gère les merges)
+          if git stash pop; then
+            # Re-add après pop (au cas où des conflits mineurs)
+            git add kubernetes/deployment.yaml || true
+          else
+            echo "Stash pop failed (possible conflicts); manual resolution needed"
+            exit 1
+          fi
+          
+          # Commit si changements persistants
           if git diff --staged --quiet; then
-            echo "No changes after pull"
+            echo "No changes after pull/pop"
           else
             git commit -m "Update Kubernetes deployment with new image tag: ${IMAGE_TAG} [skip ci]"
             git push origin main
